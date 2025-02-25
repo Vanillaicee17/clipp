@@ -1,0 +1,2 @@
+tokio::io::util::write_all::WriteAll<'_, tokio_rustls::client::TlsStream<tcp::stream::TcpStream>>
+tokio::io::util::write_all::WriteAll<'_, tokio_rustls::client::TlsStream<tokio::net::TcpStream>>

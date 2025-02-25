@@ -1,0 +1,1 @@
+Map<std::vec::IntoIter<Vec<u8>>, fn(tokio_rustls::rustls::Certificate) -> tokio_rustls::rustls::Certificate {<tokio_rustls::rustls::Certificate as From<tokio_rustls::rustls::Certificate>>::from}>
