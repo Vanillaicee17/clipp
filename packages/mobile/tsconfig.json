@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "types": [
+      "react"
+    ]
+  },
+  "include": [
+    "App.tsx",
+    "src/**/*"
+  ]
+}
