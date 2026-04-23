@@ -1,4 +1,4 @@
-import { deviceIdFromPublicKey, encodeHex } from "@clipp/core";
+import { deviceIdFromPublicKey } from "@clipp/core";
 import type { DeviceInfo, PairAcceptFrame, PairRequestFrame } from "@clipp/core";
 
 import type { RelaySocket } from "./router";
@@ -43,12 +43,6 @@ export class PairingManager {
     const requester = this.pendingByPin.get(frame.pin);
     if (!requester) {
       throw new Error("No pending pairing request exists for that PIN.");
-    }
-
-    const requesterKey = encodeHex(requester.device.publicKey);
-    const expectedKey = encodeHex(frame.requesterPublicKey);
-    if (requesterKey !== expectedKey) {
-      throw new Error("Pair accept did not match the requesting device public key.");
     }
 
     const accepter = normalizeDevice(frame.device);

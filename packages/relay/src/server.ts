@@ -7,8 +7,15 @@ import { MessageRouter, type RelaySocket, type RoomState } from "./router";
 export class RelayServer {
   private readonly rooms = new Map<string, RoomState>();
   private readonly socketToRoom = new WeakMap<RelaySocket, string>();
+  private readonly socketToDevice = new WeakMap<RelaySocket, string>();
+  private readonly deviceToRoom = new Map<string, string>();
   private readonly pairing = new PairingManager();
-  private readonly router = new MessageRouter(this.rooms, this.socketToRoom);
+  private readonly router = new MessageRouter(
+    this.rooms,
+    this.socketToRoom,
+    this.socketToDevice,
+    this.deviceToRoom,
+  );
 
   handleOpen(_socket: RelaySocket): void {}
 
@@ -55,6 +62,16 @@ export class RelayServer {
 
           resolution.requester.socket.send(encodeRelayFrame(requesterComplete));
           resolution.accepter.socket.send(encodeRelayFrame(accepterComplete));
+          break;
+        }
+        case "resume-session": {
+          const resumeComplete = this.router.resume(frame.device, socket);
+          if (!resumeComplete) {
+            this.sendError(socket, "resume-failed", "No saved paired session exists for this device.");
+            break;
+          }
+
+          socket.send(encodeRelayFrame(resumeComplete));
           break;
         }
         case "sealed-clip":

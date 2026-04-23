@@ -1,16 +1,7 @@
 import React from "react";
-import {
-  Button,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Button, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 interface HomeScreenProps {
-  relayUrl: string;
-  onRelayUrlChange: (value: string) => void;
   clipboardText: string;
   onClipboardTextChange: (value: string) => void;
   connectionStatus: string;
@@ -21,8 +12,6 @@ interface HomeScreenProps {
 }
 
 export function HomeScreen({
-  relayUrl,
-  onRelayUrlChange,
   clipboardText,
   onClipboardTextChange,
   connectionStatus,
@@ -31,24 +20,30 @@ export function HomeScreen({
   history,
   onOpenPairing,
 }: HomeScreenProps) {
+  const isPaired = connectionStatus === "paired";
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.hero}>
         <Text style={styles.eyebrow}>clipp mobile</Text>
-        <Text style={styles.title}>Move clipboard text between your phone and desktop without exposing plaintext to the relay.</Text>
+        <Text style={styles.title}>Scan your desktop once, then watch your clipboard stay in step.</Text>
         <Text style={styles.subtitle}>
-          Pair once, then let encrypted clipboard updates flow in both directions over a binary WebSocket stream.
+          The phone now expects the desktop to advertise everything it needs in one QR code: relay address, pairing PIN, and the live pairing request.
         </Text>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.label}>Relay URL</Text>
-        <TextInput style={styles.input} value={relayUrl} onChangeText={onRelayUrlChange} />
+        <Text style={styles.label}>{isPaired ? "Connected Desktop" : "Desktop Pairing"}</Text>
         <View style={styles.metrics}>
           <Text style={styles.metric}>Status: {connectionStatus}</Text>
-          <Text style={styles.metric}>Paired device: {pairedDeviceName}</Text>
+          <Text style={styles.metric}>{isPaired ? `Connected to ${pairedDeviceName}` : "Not paired yet"}</Text>
         </View>
-        <Button title="Open Pairing" onPress={onOpenPairing} />
+        <Text style={styles.helperText}>
+          {isPaired
+            ? "If you ever want to switch desktops, scan a new QR code from the desktop app."
+            : "Open clipp on your desktop and point your camera at the pairing QR code."}
+        </Text>
+        <Button title={isPaired ? "Scan Another Desktop" : "Scan Desktop QR"} onPress={onOpenPairing} />
       </View>
 
       <View style={styles.card}>
@@ -131,6 +126,10 @@ const styles = StyleSheet.create({
   },
   metric: {
     color: "#5f5349",
+  },
+  helperText: {
+    color: "#7a634f",
+    lineHeight: 20,
   },
   historyItem: {
     padding: 14,

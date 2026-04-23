@@ -1,11 +1,19 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import QRCode from "react-qr-code";
+import { invoke } from "@tauri-apps/api/core";
+import { createPin, type PairingPayload } from "@clipp/core";
 
 import { useClipboard } from "./hooks/useClipboard";
 import { useSync } from "./hooks/useSync";
 
+const DESKTOP_RELAY_URL = "ws://127.0.0.1:8787";
+
 export default function App() {
   const { clipboardText, setClipboardText } = useClipboard();
-  const [relayUrl, setRelayUrl] = useState("ws://localhost:8787");
+  const [shareRelayUrl, setShareRelayUrl] = useState("");
+  const [shareRelayError, setShareRelayError] = useState<string | null>(null);
+  const pairingRequestedPinRef = useRef<string | null>(null);
+
   const {
     connectionStatus,
     deviceId,
@@ -15,75 +23,112 @@ export default function App() {
     publicKeyBase64,
     pairPin,
     setPairPin,
-    requesterPublicKey,
-    setRequesterPublicKey,
     startPairing,
-    acceptPairing,
   } = useSync({
     clipboardText,
-    relayUrl,
+    relayUrl: DESKTOP_RELAY_URL,
     setClipboardText,
   });
+
+  useEffect(() => {
+    void invoke<string>("get_pairing_relay_url")
+      .then((resolvedRelayUrl) => {
+        setShareRelayUrl(resolvedRelayUrl);
+        setShareRelayError(null);
+      })
+      .catch((error) => {
+        setShareRelayError(error instanceof Error ? error.message : "Unable to determine your LAN relay address.");
+      });
+  }, []);
+
+  useEffect(() => {
+    if (connectionStatus !== "connected" || pairedDevice) {
+      pairingRequestedPinRef.current = null;
+      return;
+    }
+
+    if (pairingRequestedPinRef.current === pairPin) {
+      return;
+    }
+
+    startPairing();
+    pairingRequestedPinRef.current = pairPin;
+  }, [connectionStatus, pairPin, pairedDevice, startPairing]);
+
+  const pairingPayload = useMemo<PairingPayload | null>(() => {
+    if (!shareRelayUrl) {
+      return null;
+    }
+
+    return {
+      relayUrl: shareRelayUrl,
+      pin: pairPin,
+      publicKey: publicKeyBase64,
+      deviceName: "Desktop",
+    };
+  }, [pairPin, publicKeyBase64, shareRelayUrl]);
+
+  const qrValue = pairingPayload ? JSON.stringify(pairingPayload) : "";
 
   return (
     <main style={styles.page}>
       <section style={styles.hero}>
         <div>
           <div style={styles.eyebrow}>clipp desktop</div>
-          <h1 style={styles.title}>Encrypted clipboard sync for the devices on your desk.</h1>
+          <h1 style={styles.title}>Open clipp on your phone and scan once. The rest should disappear.</h1>
           <p style={styles.subtitle}>
-            The relay only forwards sealed binary frames. Your clipboard text is encrypted end to end before it leaves this app.
+            The desktop app keeps its own relay connection locally, advertises your LAN pairing details as a QR code, and starts the pairing request for you as soon as the relay is reachable.
           </p>
         </div>
         <div style={styles.statusCard}>
           <span style={styles.statusLabel}>Connection</span>
           <strong style={styles.statusValue}>{connectionStatus}</strong>
+          <span style={styles.metaText}>Desktop relay: {DESKTOP_RELAY_URL}</span>
           <span style={styles.metaText}>Device ID: {deviceId}</span>
           <span style={styles.metaText}>
-            Paired device: {pairedDevice ? pairedDevice.name : "Not paired"}
+            Paired device: {pairedDevice ? `${pairedDevice.name} (${pairedDevice.deviceId})` : "Waiting for phone"}
           </span>
         </div>
       </section>
 
       <section style={styles.grid}>
         <div style={styles.panel}>
-          <h2 style={styles.panelTitle}>Relay</h2>
-          <label style={styles.label}>
-            Relay URL
-            <input
-              style={styles.input}
-              value={relayUrl}
-              onChange={(event) => setRelayUrl(event.target.value)}
-            />
-          </label>
-          <label style={styles.label}>
-            Pair PIN
-            <input
-              style={styles.input}
-              value={pairPin}
-              onChange={(event) => setPairPin(event.target.value)}
-            />
-          </label>
-          <label style={styles.label}>
-            Requester public key (base64)
-            <textarea
-              style={{ ...styles.input, minHeight: 88, resize: "vertical" as const }}
-              value={requesterPublicKey}
-              onChange={(event) => setRequesterPublicKey(event.target.value)}
-            />
-          </label>
+          <h2 style={styles.panelTitle}>{pairedDevice ? "Connected Clipboard" : "Phone Pairing"}</h2>
+          {pairedDevice ? (
+            <>
+              <div style={styles.connectedBadge}>Connected to {pairedDevice.name}</div>
+              <p style={styles.note}>
+                Your phone can reconnect to this desktop automatically after short interruptions. If you want to pair a different device, generate a fresh code below.
+              </p>
+            </>
+          ) : (
+            <>
+              <p style={styles.note}>
+                Open clipp on your phone, tap <strong>Scan Desktop QR</strong>, and point it at this code. The phone will learn the relay URL, pairing PIN, and accept the request automatically.
+              </p>
+              <div style={styles.qrPanel}>
+                {pairingPayload ? (
+                  <div style={styles.qrCanvas}>
+                    <QRCode value={qrValue} size={220} bgColor="#fffaf3" fgColor="#1f130d" />
+                  </div>
+                ) : (
+                  <div style={styles.qrPlaceholder}>
+                    {shareRelayError ?? "Waiting for a LAN relay address so the phone can reach this desktop."}
+                  </div>
+                )}
+              </div>
+              <div style={styles.pairingMeta}>
+                <span style={styles.metaText}>Phone relay: {shareRelayUrl || "Detecting..."}</span>
+                <span style={styles.metaText}>One-time PIN: {pairPin}</span>
+              </div>
+            </>
+          )}
           <div style={styles.buttonRow}>
-            <button style={styles.primaryButton} onClick={startPairing}>
-              Start pairing
-            </button>
-            <button style={styles.secondaryButton} onClick={acceptPairing}>
-              Accept pairing
+            <button style={styles.primaryButton} onClick={() => setPairPin(createPin())}>
+              Generate New QR
             </button>
           </div>
-          <div style={styles.note}>
-            Share this public key for manual pairing:
-            <pre style={styles.codeBlock}>{publicKeyBase64}</pre>
-          </div>
+          {shareRelayError ? <div style={styles.warningBox}>{shareRelayError}</div> : null}
         </div>
 
         <div style={styles.panel}>
@@ -214,7 +259,7 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     gap: "12px",
     flexWrap: "wrap",
-    marginBottom: "16px",
+    marginTop: "16px",
   },
   primaryButton: {
     border: "none",
@@ -224,27 +269,54 @@ const styles: Record<string, CSSProperties> = {
     color: "#fff9f4",
     cursor: "pointer",
   },
-  secondaryButton: {
-    border: "1px solid rgba(137, 81, 41, 0.2)",
-    borderRadius: "999px",
-    padding: "12px 18px",
-    background: "#fffaf3",
-    color: "#5c4b3c",
-    cursor: "pointer",
-  },
   note: {
     color: "#5c4b3c",
     lineHeight: 1.5,
   },
-  codeBlock: {
-    marginTop: "8px",
-    padding: "12px",
-    borderRadius: "14px",
-    background: "#24150d",
-    color: "#fce6d6",
-    overflowX: "auto",
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
+  qrPanel: {
+    marginTop: "16px",
+    display: "flex",
+    justifyContent: "center",
+  },
+  qrCanvas: {
+    padding: "20px",
+    borderRadius: "24px",
+    background: "#fffaf3",
+    boxShadow: "inset 0 0 0 1px rgba(137, 81, 41, 0.12)",
+  },
+  qrPlaceholder: {
+    minHeight: "220px",
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "20px",
+    borderRadius: "24px",
+    background: "#fff6ec",
+    color: "#8f6a4f",
+    textAlign: "center",
+  },
+  pairingMeta: {
+    marginTop: "16px",
+    display: "grid",
+    gap: "6px",
+  },
+  connectedBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    padding: "10px 14px",
+    borderRadius: "999px",
+    background: "#edf7ef",
+    color: "#24643b",
+    fontWeight: 600,
+  },
+  warningBox: {
+    marginTop: "16px",
+    padding: "12px 14px",
+    borderRadius: "16px",
+    background: "#fff0e2",
+    color: "#8a4b1f",
   },
   history: {
     maxHeight: "360px",

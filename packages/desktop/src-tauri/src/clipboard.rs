@@ -19,18 +19,10 @@ pub fn write_clipboard_text(text: &str) -> Result<(), String> {
 
 pub fn spawn_clipboard_watcher(app_handle: AppHandle) {
     thread::spawn(move || {
-        let mut clipboard = match Clipboard::new() {
-            Ok(clipboard) => clipboard,
-            Err(error) => {
-                eprintln!("failed to initialize clipboard watcher: {error}");
-                return;
-            }
-        };
-
-        let mut last_seen = String::new();
+        let mut last_seen = read_clipboard_text().unwrap_or_default();
 
         loop {
-            match clipboard.get_text() {
+            match read_clipboard_text() {
                 Ok(current_text) if current_text != last_seen => {
                     last_seen = current_text.clone();
                     if let Err(error) = app_handle.emit("clipboard-changed", current_text) {

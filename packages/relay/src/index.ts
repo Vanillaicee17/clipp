@@ -12,6 +12,7 @@ interface BunWebSocketHandlers {
 }
 
 interface BunServeOptions {
+  hostname?: string;
   port: number;
   fetch: (request: Request, server: BunServeServer) => Response | undefined;
   websocket: BunWebSocketHandlers;
@@ -30,10 +31,12 @@ const relay = new RelayServer();
 const runtimeEnv = (globalThis as typeof globalThis & {
   process?: { env?: Record<string, string | undefined> };
 }).process?.env;
+const hostname = runtimeEnv?.HOST ?? "0.0.0.0";
 const port = Number.parseInt(runtimeEnv?.PORT ?? "8787", 10);
 
 // Bun keeps the default relay lightweight; the WebSocket handling here can be ported to Node's ws package if needed.
 const server = bunRuntime.serve({
+  hostname,
   port,
   fetch(request, runtimeServer) {
     if (runtimeServer.upgrade(request)) {
@@ -55,4 +58,4 @@ const server = bunRuntime.serve({
   },
 });
 
-console.log(`clipp relay listening on ws://localhost:${server.port}`);
+console.log(`clipp relay listening on ws://${hostname}:${server.port}`);

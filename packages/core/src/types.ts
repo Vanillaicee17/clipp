@@ -32,7 +32,6 @@ export interface PairRequestFrame {
 export interface PairAcceptFrame {
   kind: "pair-accept";
   pin: string;
-  requesterPublicKey: Uint8Array;
   device: DeviceInfo;
 }
 
@@ -40,6 +39,11 @@ export interface PairCompleteFrame {
   kind: "pair-complete";
   roomId: string;
   peer: DeviceInfo;
+}
+
+export interface ResumeSessionFrame {
+  kind: "resume-session";
+  device: DeviceInfo;
 }
 
 export interface SealedClipFrame {
@@ -65,6 +69,7 @@ export type RelayFrame =
   | PairRequestFrame
   | PairAcceptFrame
   | PairCompleteFrame
+  | ResumeSessionFrame
   | SealedClipFrame
   | ErrorFrame
   | RoomClosedFrame;
@@ -72,7 +77,8 @@ export type RelayFrame =
 export interface PairingPayload {
   relayUrl: string;
   pin: string;
-  publicKey: string;
+  publicKey?: string;
+  deviceName?: string;
 }
 
 export interface EncryptedPayload {

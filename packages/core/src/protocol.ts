@@ -7,6 +7,7 @@ import type {
   PairCompleteFrame,
   PairRequestFrame,
   RelayFrame,
+  ResumeSessionFrame,
   RoomClosedFrame,
   SealedClipFrame,
 } from "./types";
@@ -29,6 +30,7 @@ const FRAME_KIND_CODES = {
   "sealed-clip": 19,
   error: 20,
   "room-closed": 21,
+  "resume-session": 22,
 } as const;
 
 type FrameKind = keyof typeof FRAME_KIND_CODES;
@@ -194,12 +196,14 @@ export function encodeRelayFrame(frame: RelayFrame): Uint8Array {
       break;
     case "pair-accept":
       writer.writeString(frame.pin);
-      writer.writeBytes(frame.requesterPublicKey);
       writeDevice(writer, frame.device);
       break;
     case "pair-complete":
       writer.writeString(frame.roomId);
       writeDevice(writer, frame.peer);
+      break;
+    case "resume-session":
+      writeDevice(writer, frame.device);
       break;
     case "sealed-clip":
       writer.writeString(frame.senderDeviceId);
@@ -250,7 +254,6 @@ export function decodeRelayFrame(buffer: Uint8Array): RelayFrame {
       frame = {
         kind,
         pin: reader.readString(),
-        requesterPublicKey: reader.readBytes(),
         device: readDevice(reader),
       } satisfies PairAcceptFrame;
       break;
@@ -260,6 +263,12 @@ export function decodeRelayFrame(buffer: Uint8Array): RelayFrame {
         roomId: reader.readString(),
         peer: readDevice(reader),
       } satisfies PairCompleteFrame;
+      break;
+    case "resume-session":
+      frame = {
+        kind,
+        device: readDevice(reader),
+      } satisfies ResumeSessionFrame;
       break;
     case "sealed-clip":
       frame = {

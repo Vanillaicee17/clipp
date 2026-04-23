@@ -7,14 +7,7 @@ export interface KeyPair {
   secretKey: Uint8Array;
 }
 
-const textEncoder = new TextEncoder();
-const textDecoder = new TextDecoder();
-
-interface BufferLike {
-  from(input: string | Uint8Array, encoding?: string): { toString(encoding: string): string };
-}
-
-const globalWithBuffer = globalThis as typeof globalThis & { Buffer?: BufferLike };
+const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 export const PUBLIC_KEY_LENGTH = nacl.box.publicKeyLength;
 export const SECRET_KEY_LENGTH = nacl.box.secretKeyLength;
@@ -48,11 +41,11 @@ export function decrypt(
 }
 
 export function encodeText(value: string): Uint8Array {
-  return textEncoder.encode(value);
+  return new TextEncoder().encode(value);
 }
 
 export function decodeText(value: Uint8Array): string {
-  return textDecoder.decode(value);
+  return new TextDecoder().decode(value);
 }
 
 export function encodeHex(value: Uint8Array): string {
@@ -73,34 +66,55 @@ export function decodeHex(value: string): Uint8Array {
 }
 
 export function encodeBase64(value: Uint8Array): string {
-  const bufferApi = globalWithBuffer.Buffer;
-  if (bufferApi) {
-    return bufferApi.from(value).toString("base64");
+  let output = "";
+  for (let index = 0; index < value.length; index += 3) {
+    const first = value[index] ?? 0;
+    const second = value[index + 1] ?? 0;
+    const third = value[index + 2] ?? 0;
+
+    const chunk = (first << 16) | (second << 8) | third;
+    output += BASE64_ALPHABET[(chunk >> 18) & 0x3f];
+    output += BASE64_ALPHABET[(chunk >> 12) & 0x3f];
+    output += index + 1 < value.length ? BASE64_ALPHABET[(chunk >> 6) & 0x3f] : "=";
+    output += index + 2 < value.length ? BASE64_ALPHABET[chunk & 0x3f] : "=";
   }
 
-  let binary = "";
-  for (const byte of value) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return btoa(binary);
+  return output;
 }
 
 export function decodeBase64(value: string): Uint8Array {
-  const bufferApi = globalWithBuffer.Buffer;
-  if (bufferApi) {
-    const encoded = bufferApi.from(value, "base64").toString("binary");
-    const result = new Uint8Array(encoded.length);
-    for (let index = 0; index < encoded.length; index += 1) {
-      result[index] = encoded.charCodeAt(index);
-    }
-    return result;
+  const normalized = value.replace(/\s+/g, "");
+  if (normalized.length % 4 !== 0) {
+    throw new Error("Invalid base64 string length.");
   }
 
-  const binary = atob(value);
-  const result = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    result[index] = binary.charCodeAt(index);
+  const padding = normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
+  const outputLength = (normalized.length / 4) * 3 - padding;
+  const result = new Uint8Array(outputLength);
+
+  let outputIndex = 0;
+  for (let index = 0; index < normalized.length; index += 4) {
+    const encodedA = decodeBase64Character(normalized[index]);
+    const encodedB = decodeBase64Character(normalized[index + 1]);
+    const encodedC = normalized[index + 2] === "=" ? 0 : decodeBase64Character(normalized[index + 2]);
+    const encodedD = normalized[index + 3] === "=" ? 0 : decodeBase64Character(normalized[index + 3]);
+
+    const chunk = (encodedA << 18) | (encodedB << 12) | (encodedC << 6) | encodedD;
+
+    if (outputIndex < outputLength) {
+      result[outputIndex] = (chunk >> 16) & 0xff;
+      outputIndex += 1;
+    }
+
+    if (outputIndex < outputLength) {
+      result[outputIndex] = (chunk >> 8) & 0xff;
+      outputIndex += 1;
+    }
+
+    if (outputIndex < outputLength) {
+      result[outputIndex] = chunk & 0xff;
+      outputIndex += 1;
+    }
   }
 
   return result;
@@ -113,4 +127,13 @@ export function createPin(length = 6): string {
 
 export function deviceIdFromPublicKey(publicKey: Uint8Array): string {
   return encodeHex(publicKey.slice(0, 8));
+}
+
+function decodeBase64Character(character: string): number {
+  const index = BASE64_ALPHABET.indexOf(character);
+  if (index === -1) {
+    throw new Error(`Invalid base64 character: ${character}`);
+  }
+
+  return index;
 }

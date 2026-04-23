@@ -1,72 +1,122 @@
-import React from "react";
-import {
-  Button,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import QRCode from "react-native-qrcode-svg";
+import React, { useMemo, useState } from "react";
+import { Button, StyleSheet, Text, View } from "react-native";
+import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
+import type { PairingPayload } from "@clipp/core";
 
 interface PairingScreenProps {
-  relayUrl: string;
-  pairPin: string;
-  onPairPinChange: (value: string) => void;
-  publicKeyBase64: string;
-  requesterPublicKey: string;
-  onRequesterPublicKeyChange: (value: string) => void;
-  onStartPairing: () => void;
-  onAcceptPairing: () => void;
+  pairingStatus: string;
+  onScanPairingPayload: (payload: PairingPayload) => void;
   onDone: () => void;
 }
 
 export function PairingScreen({
-  relayUrl,
-  pairPin,
-  onPairPinChange,
-  publicKeyBase64,
-  requesterPublicKey,
-  onRequesterPublicKeyChange,
-  onStartPairing,
-  onAcceptPairing,
+  pairingStatus,
+  onScanPairingPayload,
   onDone,
 }: PairingScreenProps) {
-  const qrValue = JSON.stringify({
-    relayUrl,
-    pin: pairPin,
-    publicKey: publicKeyBase64,
-  });
+  const [permission, requestPermission] = useCameraPermissions();
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [isScanningEnabled, setIsScanningEnabled] = useState(true);
+
+  const statusText = useMemo(() => {
+    if (scanError) {
+      return scanError;
+    }
+
+    return pairingStatus;
+  }, [pairingStatus, scanError]);
+
+  const handleBarcodeScanned = ({ data }: BarcodeScanningResult) => {
+    if (!isScanningEnabled) {
+      return;
+    }
+
+    try {
+      const payload = parsePairingPayload(data);
+      setIsScanningEnabled(false);
+      setScanError(null);
+      onScanPairingPayload(payload);
+    } catch (error) {
+      setScanError(error instanceof Error ? error.message : "That QR code is not a clipp pairing code.");
+    }
+  };
+
+  if (!permission) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>Preparing camera...</Text>
+      </View>
+    );
+  }
+
+  if (!permission.granted) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>Camera access is required</Text>
+        <Text style={styles.subtitle}>
+          clipp uses your camera once to scan the desktop pairing QR code and pull in the relay address and pairing PIN automatically.
+        </Text>
+        <Button title="Allow Camera" onPress={() => void requestPermission()} />
+        <Button title="Back to Home" onPress={onDone} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Pair a device</Text>
+      <Text style={styles.title}>Scan the desktop QR code</Text>
       <Text style={styles.subtitle}>
-        Show this QR code to the other device, or paste a requester public key if you are accepting a pairing request from a scanned payload.
+        Point your camera at the QR code shown in the desktop app. clipp will fill in the relay details and accept the pairing request for you.
       </Text>
 
-      <View style={styles.card}>
-        <Text style={styles.label}>Pair PIN</Text>
-        <TextInput style={styles.input} value={pairPin} onChangeText={onPairPinChange} />
-        <View style={styles.qrCard}>
-          <QRCode value={qrValue} size={220} />
-        </View>
-        <Button title="Start Pairing Request" onPress={onStartPairing} />
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.label}>Requester public key (base64)</Text>
-        <TextInput
-          multiline
-          style={[styles.input, styles.textarea]}
-          value={requesterPublicKey}
-          onChangeText={onRequesterPublicKeyChange}
+      <View style={styles.cameraCard}>
+        <CameraView
+          style={styles.camera}
+          facing="back"
+          barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+          onBarcodeScanned={isScanningEnabled ? handleBarcodeScanned : undefined}
         />
-        <Button title="Accept Pairing" onPress={onAcceptPairing} />
       </View>
 
-      <Button title="Back to Home" onPress={onDone} />
+      <View style={styles.statusCard}>
+        <Text style={styles.statusLabel}>Pairing status</Text>
+        <Text style={styles.statusText}>{statusText}</Text>
+      </View>
+
+      <View style={styles.actions}>
+        <Button
+          title="Scan Again"
+          onPress={() => {
+            setIsScanningEnabled(true);
+            setScanError(null);
+          }}
+        />
+        <Button title="Back to Home" onPress={onDone} />
+      </View>
     </View>
   );
+}
+
+function parsePairingPayload(rawValue: string): PairingPayload {
+  const parsed = JSON.parse(rawValue) as Partial<PairingPayload>;
+  if (typeof parsed.relayUrl !== "string" || parsed.relayUrl.length === 0) {
+    throw new Error("The QR code is missing a relay URL.");
+  }
+
+  if (!parsed.relayUrl.startsWith("ws://") && !parsed.relayUrl.startsWith("wss://")) {
+    throw new Error("The QR code relay URL must start with ws:// or wss://.");
+  }
+
+  if (typeof parsed.pin !== "string" || parsed.pin.length === 0) {
+    throw new Error("The QR code is missing a pairing PIN.");
+  }
+
+  return {
+    relayUrl: parsed.relayUrl,
+    pin: parsed.pin,
+    publicKey: parsed.publicKey,
+    deviceName: parsed.deviceName,
+  };
 }
 
 const styles = StyleSheet.create({
@@ -86,32 +136,30 @@ const styles = StyleSheet.create({
     color: "#5f5349",
     lineHeight: 22,
   },
-  card: {
+  cameraCard: {
+    overflow: "hidden",
+    borderRadius: 28,
+    backgroundColor: "#fffaf3",
+  },
+  camera: {
+    minHeight: 360,
+  },
+  statusCard: {
     padding: 18,
-    gap: 12,
+    gap: 8,
     borderRadius: 20,
     backgroundColor: "#fffaf3",
   },
-  label: {
-    fontSize: 18,
+  statusLabel: {
+    fontSize: 16,
     fontWeight: "700",
     color: "#1b1d22",
   },
-  input: {
-    borderWidth: 1,
-    borderColor: "#dbcbb8",
-    borderRadius: 14,
-    padding: 12,
-    backgroundColor: "#ffffff",
+  statusText: {
+    color: "#5f5349",
+    lineHeight: 22,
   },
-  textarea: {
-    minHeight: 120,
-    textAlignVertical: "top",
-  },
-  qrCard: {
-    alignItems: "center",
-    paddingVertical: 16,
-    borderRadius: 16,
-    backgroundColor: "#ffffff",
+  actions: {
+    gap: 12,
   },
 });
